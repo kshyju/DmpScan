@@ -14,45 +14,93 @@
             {
                 Console.WriteLine("Starting analysis...");
 
-                foreach (ClrInfo clr in dataTarget.ClrVersions)
+                foreach (ClrInfo clrInfo in dataTarget.ClrVersions)
                 {
-                    using ClrRuntime runtime = clr.CreateRuntime();
-                    if (!runtime.Heap.CanWalkHeap)
-                    {
-                        Console.WriteLine("Cannot walk the heap!");
-                    }
+                    //PrintGen(clrInfo);
+                    PrintDuplicateStrings(clrInfo);
+                }
+            }
+
+
+        }
+
+        private static void PrintGen(ClrInfo clr)
+        {
+            Dictionary<string, int> stringDupesDict = new Dictionary<string, int>();
+
+            ClrRuntime runtime = clr.CreateRuntime();
+            if (!runtime.Heap.CanWalkHeap)
+            {
+                Console.WriteLine("Cannot walk the heap!");
+            }
+            else
+            {
+                foreach (ClrSegment segment in runtime.Heap.Segments)
+                {
+                    string type;
+                    if (segment.IsEphemeralSegment)
+                        type = "Ephemeral";
+                    else if (segment.IsLargeObjectSegment)
+                        type = "Large";
                     else
+                        type = "Gen2";
+
+                    Console.WriteLine($"{type} object range: {segment.ObjectRange} committed memory range: {segment.CommittedMemory} reserved memory range: {segment.ReservedMemory}");
+                }
+            
+            }
+            Console.WriteLine("Done");
+        }
+
+        private static void PrintDuplicateStrings(ClrInfo clr)
+        {
+            Dictionary<string, int> stringDupesDict = new Dictionary<string, int>();
+
+            ClrRuntime runtime = clr.CreateRuntime();
+            if (!runtime.Heap.CanWalkHeap)
+            {
+                Console.WriteLine("Cannot walk the heap!");
+            }
+            else
+            {
+                foreach (ClrSegment seg in runtime.Heap.Segments)
+                {
+                    foreach (ClrObject obj in seg.EnumerateObjects())
                     {
-                        foreach (ClrSegment seg in runtime.Heap.Segments)
+                        // If heap corruption, continue past this object.
+                        if (!obj.IsValid)
                         {
-                            foreach (ClrObject obj in seg.EnumerateObjects())
-                            {
-                                // If heap corruption, continue past this object.
-                                if (!obj.IsValid)
-                                {
-                                    continue;
-                                }
+                            continue;
+                        }
 
-                                if (obj.Type.Name != "System.String")
-                                {
-                                    continue;
-                                }
+                        if (obj.Type.Name != "System.String")
+                        {
+                            continue;
+                        }
 
-                                var asstr = obj.AsString();
-                                ulong objSize = obj.Size;
-                                int generation = seg.GetGeneration(obj);
+                        string type;
+                        if (seg.IsEphemeralSegment)
+                            type = "Ephemeral";
+                        else if (seg.IsLargeObjectSegment)
+                            type = "Large";
+                        else
+                            type = "Gen2";
 
-                                var keyWithGen = $"{asstr}_{objSize}_{generation}";
-                                if (stringDupesDict.TryGetValue(keyWithGen, out int val))
-                                {
-                                    val = val + 1;
-                                    stringDupesDict[keyWithGen] = val;
-                                }
-                                else
-                                {
-                                    stringDupesDict[keyWithGen] = 1;
-                                }
-                            }
+                        var asstr = obj.AsString();
+                        ulong objSize = obj.Size;
+                        int generation = seg.GetGeneration(obj);
+
+                        //Console.WriteLine($"{obj} {objSize} {generation}");
+                        
+                        var keyWithGen = $"{asstr}_{objSize}_{generation}_{type}";
+                        if (stringDupesDict.TryGetValue(keyWithGen, out int val))
+                        {
+                            val = val + 1;
+                            stringDupesDict[keyWithGen] = val;
+                        }
+                        else
+                        {
+                            stringDupesDict[keyWithGen] = 1;
                         }
                     }
                 }
